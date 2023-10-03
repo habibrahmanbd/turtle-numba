@@ -126,7 +126,14 @@ class TNavigator(object):
         ende = Vec2D(int(round(ende[0])), int(round(ende[1])))
         # print("Start: {}, End: {}, Distance: {}, Orient: {}".format(self._position, ende, distance, self._orient))
         self._goto(ende)
-
+    
+    def _get_end_point(self):
+        """Return the end point of the turtle's line."""
+        distance = max(self._canvas_width, self._canvas_height)
+        ende = self._position + self._orient * distance
+        ende = Vec2D(int(round(ende[0])), int(round(ende[1])))
+        return ende
+    
     def _rotate(self, angle):
         """Turn turtle counterclockwise by specified angle if angle > 0."""
         angle *= self._degreesPerAU
@@ -134,31 +141,20 @@ class TNavigator(object):
 
     def _goto(self, end):
         """move turtle to position end."""
-        end_x = int(round(end[0]))
-        end_y = int(round(end[1]))
+        
+        rr, cc = [], []
         if self._penmode == TNavigator.DEFAULT_PEN_DOWN:
-            
-            # bounding the lines to the canvas by clipping into [0, canvas_width-1] and [0, canvas_height-1]
-            start_point = Vec2D(max(0, min(self._canvas_width-1, self._position[0])), max(0, min(self._canvas_height-1, self._position[1])))
-            end_point = Vec2D(max(0, min(self._canvas_width-1, end[0])), max(0, min(self._canvas_height-1, end[1])))
-            
             # Getting the line for drawing in the 2D matrix (using skimage: pip install scikit-image)
-            points = self._get_line(start_point, end_point) 
-            if len(points):
+            rr, cc = self._get_line(self._position, end)
+            # filtering out the points that are outside the canvas
+            mask = ((rr >= 0) & (rr < self._canvas_height) & (cc >= 0) & (cc < self._canvas_width))
+            rr, cc = rr[mask], cc[mask]
+            if len(rr):
                 current_point_color = self._canvas[self._position]
-                self._canvas[points] = self._pen_color
+                self._canvas[rr, cc] = self._pen_color
                 self._canvas[self._position] = current_point_color
-            
-            # Getting the line for drawing in the 2D matrix (using Bresenham's algorithm: pip install bresenham)
-            # points = self.__get_line(start_point, end_point)
-            # try:
-            #     points.remove(self._position)
-            # except:
-            #     _ = 0
-            # if len(points):
-            #     self._canvas[tuple(zip(*points))] = self._pen_color
 
-        self._position = Vec2D(end_x, end_y)
+        self._position = end if (len(rr) >0 and len(cc) > 0) else Vec2D(rr[-1], cc[-1])
 
     def forward(self, distance, angle = 0):
         """Move the turtle forward by the specified distance.
@@ -483,7 +479,7 @@ class TNavigator(object):
         elif isinstance(x, TNavigator):
             pos = x._position
         x, y = pos - self._position
-        result = round(np.atan2(y, x)*180.0/np.pi, 10) % 360.0
+        result = round(np.arctan2(y, x)*180.0/np.pi, 10) % 360.0
         result /= self._degreesPerAU
         return (self._angleOffset + self._angleOrient*result) % self._fullcircle
 
@@ -498,7 +494,7 @@ class TNavigator(object):
         67.0
         """
         x, y = self._orient
-        result = round(np.atan2(y, x)*180.0/np.pi, 10) % 360.0
+        result = round(np.arctan2(y, x)*180.0/np.pi, 10) % 360.0
         result /= self._degreesPerAU
         return (self._angleOffset + self._angleOrient*result) % self._fullcircle
 
@@ -605,6 +601,23 @@ class TNavigator(object):
     def _get_line(self, cor1, cor2):
         """Return a line between two coordinates using bresenham algorithm."""
         return list(line(int(cor1[0]), int(cor1[1]), int(cor2[0]), int(cor2[1])))
+    
+    def _get_line_from_current_to_end(self):
+        """Return a line between current position and end point in the heading direction using bresenham algorithm."""
+        cor = self._get_end_point()
+        rr, cc = self._get_line(self._position, cor)
+        
+        # If not, convert it using points = np.array(points)
+        points = np.array([rr, cc]).T
+
+        # Filter the points based on the condition
+        mask = ((points[:, 0] >= 0) & (points[:, 0] < self._canvas.shape[0]) &
+                (points[:, 1] >= 0) & (points[:, 1] < self._canvas.shape[1]))
+
+        # Apply the mask to the points array
+        points = points[mask]
+        return points
+    
     def __get_line(self, cor1, cor2):
         """Return a line between two coordinates using bresenham algorithm."""
         return list(bresenham(int(cor1[0]), int(cor1[1]), int(cor2[0]), int(cor2[1])))
@@ -616,55 +629,52 @@ class TNavigator(object):
     def _save_image_cv2(self, filename):
         cv2.imwrite(filename=filename, img = self._get_image_cv2())
     
-    def dda(self, x1, y1, x2, y2):
-        points = []
-        issteep = abs(y2-y1) > abs(x2-x1)
-        if issteep:
-            x1, y1 = y1, x1
-            x2, y2 = y2, x2
-        rev = False
-        if x1 > x2:
-            x1, x2 = x2, x1
-            y1, y2 = y2, y1
-            rev = True
-        deltax = x2 - x1
-        deltay = abs(y2-y1)
-        error = int(deltax / 2.0)
-        y = y1
-        ystep = None
-        if y1 < y2:
-            ystep = 1
-        else:
-            ystep = -1
-        for x in range(int(x1), int(x2 + 1.0)):
-            if issteep:
-                points.append((y, x))
-            else:
-                points.append((x, y))
-            error -= deltay
-            if error < 0:
-                y += ystep
-                error += deltax
-        # Reverse the list if the coordinates were reversed
-        if rev:
-            points.reverse()
-        print("Points: {}".format(points))
-        return points
-
 if __name__ == "__main__":
 
     def demo2():
         """Demo of some new features."""
         turtle = TNavigator()
         # turtle.reset()
-        turtle.backward(20)
+        turtle.forward(20)
         turtle.left(120)
-        turtle.backward(20)
+        turtle.forward(20)
         turtle.left(120)
-        turtle.backward(20)
+        turtle.forward(20)
+        # print("Turtle Canvas: {}".format(turtle._canvas))
         # turtle.circle(20, steps=10000)
-        # cv2.imwrite(filename="img/art_NonNumba.jpg", img = turtle._get_image_cv2())
+        # print("Current Position: {} Heading: {}".format(turtle._position, turtle.heading()))
+        # points = turtle._get_line_from_current_to_end()
+        # print("Line from current position to end point: {}".format(points))
+        # img = turtle._get_image_cv2()
+        # cv2.imwrite(filename="img/art_NonNumba.jpg", img = img)
+        
+        # """points = [[ 64  64]
+        #         [ 65  63]
+        #         [ 66  63]
+        #         [ 67  62]
+        #         [ 68  62]
+        #         [ 69  61]]
+        # """
+        # # mark the points on the image as 0
+        # img[points[:, 0], points[:, 1]] = 0
+        
+        # cv2.imwrite(filename="img/art_NonNumba_extension.jpg", img = img)
+        
+        # img = np.ones((128, 128), dtype = np.uint8)*255
+        # # generate strainght line points from (64,64) to (64, 130)
+        # rr, cc = line(64, 64, 0, 0)
+        
+        # points = rr, cc
+        
+        # # filter out the points which are outside the canvas
+        # mask = ((points[0] >= 0) & (points[0] < img.shape[0]) & (points[1] >= 0) & (points[1] < img.shape[1]))
+        # points = points[0][mask], points[1][mask]
+        # img[points[0], points[1]] = 0
+        
+        # cv2.imwrite(filename="img/art_NonNumba_extension2.jpg", img = img)
+        
+        
     import timeit
 
     # call the demo2 for 1000000 times and log the time
-    print("Time taken in Non-numba (in seconds): {}".format(timeit.timeit("demo2()", setup="from __main__ import demo2", number=1000000)))
+    print("Time taken in Non-numba (in seconds): {}".format(timeit.timeit("demo2()", setup="from __main__ import demo2", number=100000)))
